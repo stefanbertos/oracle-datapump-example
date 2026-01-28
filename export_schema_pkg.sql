@@ -20,7 +20,7 @@ CREATE OR REPLACE PACKAGE EXPORT_SCHEMA_PKG AS
         p_schema_name   IN VARCHAR2,
         p_directory     IN VARCHAR2 DEFAULT 'DATAPUMP_DIR',
         p_parallel      IN NUMBER   DEFAULT 1,  -- Default 1 for XE compatibility
-        p_compression   IN VARCHAR2 DEFAULT 'ALL'
+        p_compression   IN VARCHAR2 DEFAULT 'NONE'  -- XE doesn't support compression
     );
 
     -- Export multiple schemas
@@ -28,7 +28,7 @@ CREATE OR REPLACE PACKAGE EXPORT_SCHEMA_PKG AS
         p_schema_list   IN VARCHAR2,  -- Comma-separated list: 'SCHEMA1,SCHEMA2,SCHEMA3'
         p_directory     IN VARCHAR2 DEFAULT 'DATAPUMP_DIR',
         p_parallel      IN NUMBER   DEFAULT 1,  -- Default 1 for XE compatibility
-        p_compression   IN VARCHAR2 DEFAULT 'ALL'
+        p_compression   IN VARCHAR2 DEFAULT 'NONE'  -- XE doesn't support compression
     );
 
     -- Get job status
@@ -66,7 +66,7 @@ CREATE OR REPLACE PACKAGE BODY EXPORT_SCHEMA_PKG AS
         p_schema_name   IN VARCHAR2,
         p_directory     IN VARCHAR2 DEFAULT 'DATAPUMP_DIR',
         p_parallel      IN NUMBER   DEFAULT 1,  -- Default 1 for XE compatibility
-        p_compression   IN VARCHAR2 DEFAULT 'ALL'
+        p_compression   IN VARCHAR2 DEFAULT 'NONE'  -- XE doesn't support compression
     ) IS
         v_handle        NUMBER;
         v_job_name      VARCHAR2(100);
@@ -193,14 +193,21 @@ CREATE OR REPLACE PACKAGE BODY EXPORT_SCHEMA_PKG AS
             LOG_MSG('Parallel degree set to: ' || p_parallel);
         END IF;
 
-        -- Set compression
-        IF p_compression IS NOT NULL THEN
-            DBMS_DATAPUMP.SET_PARAMETER(
-                handle  => v_handle,
-                name    => 'COMPRESSION',
-                value   => UPPER(p_compression)
-            );
-            LOG_MSG('Compression set to: ' || p_compression);
+        -- Set compression (skip for NONE - XE doesn't support compression)
+        IF p_compression IS NOT NULL AND UPPER(p_compression) != 'NONE' THEN
+            BEGIN
+                DBMS_DATAPUMP.SET_PARAMETER(
+                    handle  => v_handle,
+                    name    => 'COMPRESSION',
+                    value   => UPPER(p_compression)
+                );
+                LOG_MSG('Compression set to: ' || p_compression);
+            EXCEPTION
+                WHEN OTHERS THEN
+                    LOG_MSG('WARNING: Compression not supported (ORA-00439). Continuing without compression.');
+            END;
+        ELSE
+            LOG_MSG('Compression: NONE (disabled for XE compatibility)');
         END IF;
 
         -- Start the job
@@ -275,7 +282,7 @@ CREATE OR REPLACE PACKAGE BODY EXPORT_SCHEMA_PKG AS
         p_schema_list   IN VARCHAR2,
         p_directory     IN VARCHAR2 DEFAULT 'DATAPUMP_DIR',
         p_parallel      IN NUMBER   DEFAULT 1,  -- Default 1 for XE compatibility
-        p_compression   IN VARCHAR2 DEFAULT 'ALL'
+        p_compression   IN VARCHAR2 DEFAULT 'NONE'  -- XE doesn't support compression
     ) IS
         v_schema_list   VARCHAR2(4000) := p_schema_list;
         v_schema_name   VARCHAR2(128);
